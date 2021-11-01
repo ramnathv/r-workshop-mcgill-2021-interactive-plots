@@ -7,6 +7,9 @@ author: Ramnath Vaidyanathan
 library(shiny)
 library(tidyverse)
 library(DT)
+if (requireNamespace('rstudioapi', quietly = TRUE)){
+  options(shiny.launch.browser = rstudioapi::viewer)
+}
 ```
 
 ## Explore Cuisines
@@ -262,5 +265,3 @@ server <- function(input, output, session){
 }
 shinyApp(ui = ui, server= server)
 ```
-
-## RMarkdown Magic
