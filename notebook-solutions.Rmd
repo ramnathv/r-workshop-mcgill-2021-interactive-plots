@@ -1,0 +1,266 @@
+---
+title: Session 5 - Communicating Data
+author: Ramnath Vaidyanathan
+---
+
+```{r setup}
+library(shiny)
+library(tidyverse)
+library(DT)
+```
+
+## Explore Cuisines
+
+### App 1
+
+Food has universal appeal, and the amazing array of dishes one can concoct 
+with the multitude of ingredients leads to near infinite variety! In this
+exercise, you will use a dataset named `recipes` that contains recipes, the 
+cuisine it belongs to, and the ingredients it uses, to build a Shiny app that 
+lets the user explore the most used ingredients by cuisine.
+
+Your final app should resemble the image in this screenshot.
+
+![An app displaying an interactive table of top ingredients by chosen cuisine](https://assets.datacamp.com/production/repositories/5153/datasets/547effc4becd2f1b2f8a14af5578f59bef5d57dd/explore-cuisine-app-1.png)
+
+```{r}
+recipes <- readr::read_csv(
+  'https://assets.datacamp.com/production/repositories/5153/datasets/b91a5708f56c6e3f3117fcea71706ad156669d4e/recipes.csv.gz'
+)
+recipes
+```
+
+```{r}
+recipes %>% 
+  filter(cuisine == 'mexican') %>% 
+  # group_by(ingredient) %>% 
+  # summarize(n = n()) %>% 
+  # arrange(desc(n))
+  count(ingredient, sort = TRUE)
+```
+
+__Instruction__
+
+- __UI__:
+    - Add an input in the sidebar named `cuisine` to let users select a cuisine from the
+      full set of cuisines available in the `recipes` dataset.
+    - Add a slider input named `nb_ingredients` in the sidebar to let users select the number of ingredients to 
+      display.
+    - Add an interactive data table output in the main panel named `dt_top_ingredients`.
+- __Server__:
+    - Filter `recipes` based on the selected cuisine and number of top ingredients
+      to display.
+    - Render the filtered data as an interactive data table.
+    - Assign it to an output object named `dt_top_ingredients`.
+
+`@hint`
+- You can use `unique(recipes$cuisine)` to get the full set of cuisines.
+- You can use the functions `DT::DTOutput()`, and `DT::renderDT()` to display
+  an interactive data table.
+- You can access the user selected cuisine using `input$cuisine`, and the
+  number of ingredients to display using `input$nb_ingredients`.
+
+```{r}
+ui <- fluidPage(
+  titlePanel('Explore Cuisines'),
+  sidebarLayout(
+    sidebarPanel(
+      # CODE BELOW: Add an input named "cuisine" to select a cuisine
+      selectInput(
+        inputId = 'cuisine',
+        label = 'Select Cuisine',
+        choices = unique(recipes$cuisine)
+      ),
+      # CODE BELOW: Add an input named "nb_ingredients" to select # of ingredients
+      sliderInput(
+        inputId = 'nb_ingredients',
+        label = 'Select number of ingredients',
+        min = 2, 
+        max = 100,
+        value = 10
+      )
+    ),
+    mainPanel(
+      # CODE BELOW: Add a DT output named "dt_top_ingredients"
+      DTOutput('dt_top_ingredients', height = 750)
+    )
+  )
+)
+server <- function(input, output, session) {
+  # CODE BELOW: Render the top ingredients in a chosen cuisine as 
+  # an interactive data table and assign it to output object `dt_top_ingredients`
+  output$dt_top_ingredients <- renderDT({
+    input_cuisine <- input$cuisine
+    input_nb_ingredients <- input$nb_ingredients
+    recipes %>% 
+      filter(cuisine == input_cuisine) %>% 
+      count(ingredient, sort = TRUE) %>% 
+      head(input_nb_ingredients)
+  })
+}
+shinyApp(ui, server)
+```
+
+### App 2
+
+Each cuisine is distinct because of a small set of distinct ingredients. We
+can't surface these by looking at the most popular ingredients, since they're
+the bread-and-butter ingredients of cooking like salt or sugar.
+
+Another metric that can aid us in this quest is the term frequency–inverse
+document frequency (`TFIDF`), a numerical statistic that is intended to reflect
+how important a word (ingredient) is to a document (cuisine) in a collection or
+corpus (recipes).
+
+We already pre-computed the `tf_idf` for you and created an enriched dataset
+named `recipes_enriched`. Your goal is to create a Shiny app that displays a
+horizontal bar plot of the top distinctive ingredients in a cuisine, as measured
+by `tf_idf`.
+
+![An app displaying an interactive horizontal bar plot of top ingredients by
+chosen
+cuisine](https://assets.datacamp.com/production/repositories/5153/datasets/a3ce685627ccd54d5b1a5208ae6c0ed2af1a508b/explore-cuisine-app-2.png)
+
+```{r}
+recipes_enriched <- readr::read_csv(
+  'https://assets.datacamp.com/production/repositories/5153/datasets/c32872242f50e87040d591ebb0d79201727e02f2/recipes_enriched.csv.gz'
+)
+recipes_enriched
+```
+
+```{r}
+ui <- fluidPage(
+  titlePanel('Explore Cuisines'),
+  sidebarLayout(
+    sidebarPanel(
+      selectInput('cuisine', 'Select Cuisine', unique(recipes$cuisine)),
+      sliderInput('nb_ingredients', 'Select No. of Ingredients', 1, 100, 10),
+    ),
+    mainPanel(
+      tabsetPanel(
+        # CODE BELOW: Add a plotly output named "plot_top_ingredients"
+        tabPanel('Plot', plotOutput('plot_top_ingredients', height = 600)),
+        tabPanel('Table', DT::DTOutput('dt_top_ingredients', height = 600))
+      )
+    )
+  )
+)
+server <- function(input, output, session) {
+  # CODE BELOW: Add a reactive expression named `rval_top_ingredients` that
+  # filters `recipes_enriched` for the selected cuisine and top ingredients
+  # based on the tf_idf value.
+  rval_top_ingredients <- reactive({
+    input_cuisine <- input$cuisine
+    input_nb_ingredients <- input$nb_ingredients
+    recipes_enriched %>% 
+      filter(cuisine == input_cuisine) %>% 
+      select(-cuisine) %>% 
+      arrange(desc(tf_idf)) %>% 
+      head(input_nb_ingredients) %>% 
+      # mutate_at(c('tf', 'idf', 'tf_idf'), signif, digits = 3)
+      mutate(tf = signif(tf, 3)) %>%
+      mutate(idf = signif(idf, 3)) %>%
+      mutate(tf_idf = signif(tf_idf, 3))
+  })
+  # CODE BELOW: Render a horizontal bar plot of top ingredients and 
+  # the tf_idf of recipes they get used in, and assign it to an output named 
+  # `plot_top_ingredients`
+  output$plot_top_ingredients <- renderPlot({
+    rval_top_ingredients() %>% 
+      mutate(ingredient = fct_reorder(ingredient, tf_idf)) %>% 
+      ggplot(aes(y = ingredient, x = tf_idf)) +
+      geom_col()
+  })
+  
+  
+
+  output$dt_top_ingredients <- DT::renderDT({
+    rval_top_ingredients()
+  })
+}
+shinyApp(ui, server)
+```
+
+### App 3
+
+Hope you are having fun building these foody Shiny apps! A handy way to 
+visualize a lot of data is wordclouds. In this exercise, you will extend
+the Shiny app we built previously and add a new tab that displays the 
+top distinctive ingredients as an interactive wordcloud.
+
+![An app displaying an interactive wordcloud of top ingredients by chosen cuisine](https://assets.datacamp.com/production/repositories/5153/datasets/b3ae26a79902e1b84b1ec37c1e2d8645bdb33a4c/explore-cuisine-app-3.png)
+
+We have already loaded the packages `shiny`, `dplyr`, `ggplot2`, `plotly`, and
+`d3wordcloud`. Here is a handy snippet to create a wordcloud.
+
+```{r}
+library(wordcloud2)
+demoFreq
+wordcloud2(demoFreq, size = 1, shape = 'pentagon') 
+```
+
+__Instructions__
+
+- __UI__: Add a `d3wordcloudOutput()` named `wc_ingredients`, and wrap it in a 
+  `tabPanel()`. This should be the first `tabPanel()` in your app.
+- __Server__: Render an interactive wordcloud of top ingredients and 
+  the number of recipes they get used in, using 
+  `d3wordcloud::renderD3wordcloud()` and assign it to an output named 
+  `wc_ingredients`. You'll need to use the reactive expression `rval_top_ingredients()` to return a data frame of the top ingredients with recipe counts.
+  
+```{r}
+ui <- fluidPage(
+  titlePanel('Explore Cuisines'),
+  sidebarLayout(
+    sidebarPanel(
+      selectInput('cuisine', 'Select Cuisine', unique(recipes$cuisine)),
+      sliderInput('nb_ingredients', 'Select No. of Ingredients', 5, 100, 20),
+    ),
+    mainPanel(
+      tabsetPanel(
+        # CODE BELOW: Add `wordcloud2Output` named `wc_ingredients` in a `tabPanel`
+        tabPanel('Word Cloud', wordcloud2Output('wc_ingredients')),
+        tabPanel('Plot', plotly::plotlyOutput('plot_top_ingredients')),
+        tabPanel('Table', DT::DTOutput('dt_top_ingredients'))
+      )
+    )
+  )
+)
+server <- function(input, output, session){
+  # CODE BELOW: Render an interactive wordcloud of top ingredients and 
+  # the number of recipes they get used in, using `wordcloud2::renderWordcloud2`,
+  # and assign it to an output named `wc_ingredients`.
+  output$wc_ingredients <- wordcloud2::renderWordcloud2({
+    rval_top_ingredients() %>% 
+      rename(word = ingredient, freq = nb_recipes) %>% 
+      select(word, freq) %>% 
+      wordcloud2()
+  })
+  
+  
+  
+  rval_top_ingredients <- reactive({
+    recipes_enriched %>% 
+      filter(cuisine == input$cuisine) %>% 
+      arrange(desc(tf_idf)) %>% 
+      head(input$nb_ingredients) %>% 
+      mutate(ingredient = forcats::fct_reorder(ingredient, tf_idf))
+  })
+  output$plot_top_ingredients <- plotly::renderPlotly({
+    rval_top_ingredients() %>%
+      ggplot(aes(x = ingredient, y = tf_idf)) +
+      geom_col() +
+      coord_flip()
+  })
+  output$dt_top_ingredients <- DT::renderDT({
+    recipes %>% 
+      filter(cuisine == input$cuisine) %>% 
+      count(ingredient, name = 'nb_recipes') %>% 
+      arrange(desc(nb_recipes)) %>% 
+      head(input$nb_ingredients)
+  })
+}
+shinyApp(ui = ui, server= server)
+```
+
+## RMarkdown Magic
